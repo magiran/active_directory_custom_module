@@ -9,6 +9,7 @@ from __init__ import (
     remove_ad_user_from_group,
     verify_ad_user_in_group,
     modify_ad_obj_attrs,
+    clear_ad_obj_attrs,
     convert_uac_to_dict,
     get_uac_attr
 )
@@ -52,6 +53,12 @@ modify_ad_obj_attrs(obj_dn, {'sn': rand_str, 'displayName': rand_str}, conn_func
 print(get_ad_user('test23', ['sn'], path_dn, conn_func).sn.value == rand_str)
 print(get_ad_user('test23',['displayName'], path_dn, conn_func).displayName.value == rand_str)
 
+print('clear_ad_obj_attrs()')
+obj_dn = get_ad_user('test23', ['distinguishedName'], path_dn, conn_func).distinguishedName.value
+clear_ad_obj_attrs(obj_dn, ['sn', 'displayName'], conn_func)
+print(get_ad_user('test23', ['sn'], path_dn, conn_func).sn.value == None)
+print(get_ad_user('test23',['displayName'], path_dn, conn_func).displayName.value == None)
+
 print('convert_uac_to_dict()')
 uac_dict = convert_uac_to_dict(66048)
 print(uac_dict[8] == False)
@@ -94,6 +101,12 @@ rand_str = str(random.getrandbits(44))
 ad.modify_ad_obj_attrs(obj_dn, {'sn': rand_str, 'displayName': rand_str})
 print(ad.get_ad_user('test23', ['sn'], path_dn).sn.value == rand_str)
 print(ad.get_ad_user('test23',['displayName'], path_dn).displayName.value == rand_str)
+
+print('ad.clear_ad_obj_attrs()')
+obj_dn = ad.get_ad_user('test23', ['distinguishedName'], path_dn).distinguishedName.value
+ad.clear_ad_obj_attrs(obj_dn, ['sn', 'displayName'])
+print(ad.get_ad_user('test23', ['sn'], path_dn).sn.value == None)
+print(ad.get_ad_user('test23',['displayName'], path_dn).displayName.value == None)
 
 print('ad.convert_uac_to_dict()')
 uac_dict = ad.convert_uac_to_dict(66048)

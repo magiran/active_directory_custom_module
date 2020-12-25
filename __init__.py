@@ -116,6 +116,20 @@ def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
             }
         )
 
+def clear_ad_obj_attrs(obj_dn:str, clear_attrs:[], ad_conn):
+    """Очистка атрибутов объекта AD\n
+    obj_dn - путь distinguishedName для объекта\n
+    clear_attrs - массив имён атрибутов для очистки\n
+    ad_conn - соединитель Active Directory"""
+
+    for attr in clear_attrs:
+        ad_conn.modify(
+            obj_dn,
+            {
+                attr: [(ldap3.MODIFY_DELETE, [])]
+            }
+        )
+
 def convert_uac_to_dict(uac_value:int):
     """Перевести значение userAccountControl в словарь\n
     uac_value - 10-ричное значение userAccountControl"""
@@ -251,6 +265,13 @@ class ActiveDirectory:
         modify_attrs - атрибуты для изменения {attr1: value1, attr2: value2}"""
 
         modify_ad_obj_attrs(obj_dn, modify_attrs, self.conn)
+
+    def clear_ad_obj_attrs(self, obj_dn:str, clear_attrs:[]):
+        """Очистка атрибутов объекта AD\n
+        obj_dn - путь distinguishedName для объекта\n
+        clear_attrs - массив имён атрибутов для очистки\n"""
+
+        clear_ad_obj_attrs(obj_dn, clear_attrs, self.conn)
 
     @staticmethod
     def convert_uac_to_dict(uac_value:int):
