@@ -1,6 +1,6 @@
 #region импорты
-from ActiveDirectory import ActiveDirectory
-from ActiveDirectory import (
+from __init__ import ActiveDirectory
+from __init__ import (
     get_active_directory_conn,
     get_ad_objects,
     get_ad_user,
@@ -8,16 +8,17 @@ from ActiveDirectory import (
     add_ad_user_to_group,
     remove_ad_user_from_group,
     verify_ad_user_in_group,
+    modify_ad_obj_attrs,
     convert_uac_to_dict,
     get_uac_attr
 )
-
 from config_private import (
     ad_servers,
     ad_login,
     ad_password,
     path_dn
 )
+import random
 #endregion
 
 
@@ -43,6 +44,13 @@ add_ad_user_to_group('test22', 'Test_Group', path_dn, conn_func)
 print(True) if verify_ad_user_in_group('test22', 'Test_Group', path_dn, conn_func) else print(False)
 remove_ad_user_from_group('test22', 'Test_Group', path_dn, conn_func)
 print(False) if verify_ad_user_in_group('test22', 'Test_Group', path_dn, conn_func) else print(True)
+
+print('modify_ad_obj_attrs()')
+obj_dn = get_ad_user('test23', ['distinguishedName'], path_dn, conn_func).distinguishedName.value
+rand_str = str(random.getrandbits(44))
+modify_ad_obj_attrs(obj_dn, {'sn': rand_str, 'displayName': rand_str}, conn_func)
+print(get_ad_user('test23', ['sn'], path_dn, conn_func).sn.value == rand_str)
+print(get_ad_user('test23',['displayName'], path_dn, conn_func).displayName.value == rand_str)
 
 print('convert_uac_to_dict()')
 uac_dict = convert_uac_to_dict(66048)
@@ -79,6 +87,13 @@ ad.add_ad_user_to_group('test22', 'Test_Group')
 print(True) if ad.verify_ad_user_in_group('test22', 'Test_Group') else print(False)
 ad.remove_ad_user_from_group('test22', 'Test_Group')
 print(False) if ad.verify_ad_user_in_group('test22', 'Test_Group') else print(True)
+
+print('ad.modify_ad_obj_attrs()')
+obj_dn = ad.get_ad_user('test23', ['distinguishedName'], path_dn).distinguishedName.value
+rand_str = str(random.getrandbits(44))
+ad.modify_ad_obj_attrs(obj_dn, {'sn': rand_str, 'displayName': rand_str})
+print(ad.get_ad_user('test23', ['sn'], path_dn).sn.value == rand_str)
+print(ad.get_ad_user('test23',['displayName'], path_dn).displayName.value == rand_str)
 
 print('ad.convert_uac_to_dict()')
 uac_dict = ad.convert_uac_to_dict(66048)

@@ -102,6 +102,20 @@ def verify_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_con
             return True
     return False
 
+def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
+    """Изменение атрибутов объекта AD\n
+    obj_dn - путь distinguishedName для объекта\n
+    modify_attrs - атрибуты для изменения {attr1: value1, attr2: value2}\n
+    ad_conn - соединитель Active Directory"""
+
+    for attr_key in modify_attrs:
+        ad_conn.modify(
+            obj_dn,
+            {
+                attr_key: [(ldap3.MODIFY_REPLACE, [modify_attrs[attr_key]])]
+            }
+        )
+
 def convert_uac_to_dict(uac_value:int):
     """Перевести значение userAccountControl в словарь\n
     uac_value - 10-ричное значение userAccountControl"""
@@ -230,6 +244,13 @@ class ActiveDirectory:
             path_dn = self.search_dn
 
         return verify_ad_user_in_group(user_login, group_login, path_dn, self.conn)
+
+    def modify_ad_obj_attrs(self, obj_dn:str, modify_attrs:dict):
+        """Изменение атрибутов объекта AD\n
+        obj_dn - путь distinguishedName для объекта\n
+        modify_attrs - атрибуты для изменения {attr1: value1, attr2: value2}"""
+
+        modify_ad_obj_attrs(obj_dn, modify_attrs, self.conn)
 
     @staticmethod
     def convert_uac_to_dict(uac_value:int):
