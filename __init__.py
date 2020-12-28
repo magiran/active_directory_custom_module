@@ -70,9 +70,23 @@ def add_ad_user_to_group(user_login:str, group_login:str, path_dn:str, ad_conn):
     path_dn - dn путь для поиска сотрудника и группы\n
     ad_conn - соединитель Active Directory"""
 
-    user_dn = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn).distinguishedName.value
-    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn).distinguishedName.value
-    ldap3.extend.microsoft.addMembersToGroups.ad_add_members_to_groups(ad_conn, user_dn, group_dn)
+    user = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn)
+    group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
+
+    if user == None:
+        raise ValueError('Неверно задан логин пользователя, такого пользователя не существует')
+    if group == None:
+        raise ValueError('Неверно задан логин группы, такой группы не существует')
+
+    ldap3.extend.microsoft.addMembersToGroups.ad_add_members_to_groups(
+        ad_conn,
+        user.distinguishedName.value,
+        group.distinguishedName.value
+    )
+
+    if not check_ad_user_in_group(user_login, group_login, path_dn, ad_conn):
+        raise PermissionError(f'Сотрудник "{user_login}" не добавлен в группу "{group_login}". '\
+                               'Вероятно, недостаточно прав для этой операции.')
 
 def remove_ad_user_from_group(user_login:str, group_login:str, path_dn:str, ad_conn):
     """Удалить пользователя AD из группы AD\n
@@ -81,11 +95,26 @@ def remove_ad_user_from_group(user_login:str, group_login:str, path_dn:str, ad_c
     path_dn - dn путь для поиска сотрудника и группы\n
     ad_conn - соединитель Active Directory"""
 
-    user_dn = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn).distinguishedName.value
-    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn).distinguishedName.value
-    ldap3.extend.microsoft.removeMembersFromGroups.ad_remove_members_from_groups(ad_conn, user_dn, group_dn, True)
+    user = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn)
+    group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
 
-def verify_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn):
+    if user == None:
+        raise ValueError('Неверно задан логин пользователя, такого пользователя не существует')
+    if group == None:
+        raise ValueError('Неверно задан логин группы, такой группы не существует')    
+
+    ldap3.extend.microsoft.removeMembersFromGroups.ad_remove_members_from_groups(
+        ad_conn,
+        user.distinguishedName.value,
+        group.distinguishedName.value,
+        True
+    )
+
+    if check_ad_user_in_group(user_login, group_login, path_dn, ad_conn):
+        raise PermissionError(f'Сотрудник "{user_login}" не удалён из группы "{group_login}". '\
+                               'Вероятно, недостаточно прав для этой операции.')
+
+def check_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn):
     """Проверяем наличие пользователя AD в группе AD
     user_login - логин пользователя\n
     group_login - логин группы\n
@@ -93,12 +122,15 @@ def verify_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_con
     ad_conn - соединитель Active Directory"""
 
     # ищем всех членов группы
-    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn).distinguishedName.value
-    ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group_dn})(objectCategory=person)(objectClass=user))'  # все пользователи члены группы (рекурсивно)
+    group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
+    if group == None:
+        raise ValueError(f'Неверно задан логин группы "{group_login}", такой группы не существует')    
+    ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group.distinguishedName.value})' \
+                   '(objectCategory=person)(objectClass=user))'  # все пользователи члены группы (рекурсивно)
     searched_users = get_ad_objects(ldap_filter, ['sAMAccountName'], path_dn, ad_conn)
 
     for user in searched_users:
-        if user.sAMAccountName == user_login:
+        if user.sAMAccountName.value == user_login:
             return True
     return False
 
@@ -108,7 +140,14 @@ def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
     modify_attrs - атрибуты для изменения {attr1: value1, attr2: value2}\n
     ad_conn - соединитель Active Directory"""
 
+    # выводим ошибку если нет объекта с distinguishedName = obj_dn
+    ldap_filter = f'(distinguishedName={obj_dn})'
+    searched_obj = get_ad_objects(ldap_filter, [], obj_dn, ad_conn)
+    if searched_obj == []:
+        raise ValueError(f'Отсутствует объект с distinguishedName = "{obj_dn}"')
+
     for attr_key in modify_attrs:
+        # изменение атрибута
         ad_conn.modify(
             obj_dn,
             {
@@ -116,19 +155,42 @@ def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
             }
         )
 
+        #проверка изменения атрибута
+        updated_attr_value = getattr(
+            get_ad_objects(ldap_filter, [attr_key], obj_dn, ad_conn)[0],
+            attr_key    
+        ).value
+        if updated_attr_value != modify_attrs[attr_key]:
+            raise PermissionError(f'Атрибут "{attr_key}" не изменён. Вероятно, недостаточно прав для этой операции.')
+        
 def clear_ad_obj_attrs(obj_dn:str, clear_attrs:[], ad_conn):
     """Очистка атрибутов объекта AD\n
     obj_dn - путь distinguishedName для объекта\n
     clear_attrs - массив имён атрибутов для очистки\n
     ad_conn - соединитель Active Directory"""
 
-    for attr in clear_attrs:
+    # выводим ошибку если нет объекта с distinguishedName = obj_dn
+    ldap_filter = f'(distinguishedName={obj_dn})'
+    searched_obj = get_ad_objects(ldap_filter, [], obj_dn, ad_conn)
+    if searched_obj == []:
+        raise ValueError(f'Отсутствует объект с distinguishedName = "{obj_dn}"')
+
+    for attr_key in clear_attrs:
+        # очистка атрибута
         ad_conn.modify(
             obj_dn,
             {
-                attr: [(ldap3.MODIFY_DELETE, [])]
+                attr_key: [(ldap3.MODIFY_DELETE, [])]
             }
         )
+
+        # проверка очистки атрибута
+        updated_attr_value = getattr(
+            get_ad_objects(ldap_filter, [attr_key], obj_dn, ad_conn)[0],
+            attr_key    
+        ).value
+        if updated_attr_value != None:
+            raise PermissionError(f'Атрибут "{attr_key}" не очищен. Вероятно, недостаточно прав для этой операции.')
 
 def convert_uac_to_dict(uac_value:int):
     """Перевести значение userAccountControl в словарь\n
@@ -247,7 +309,7 @@ class ActiveDirectory:
 
         remove_ad_user_from_group(user_login, group_login, path_dn, self.conn)
 
-    def verify_ad_user_in_group(self, user_login:str, group_login:str, path_dn:str=None):
+    def check_ad_user_in_group(self, user_login:str, group_login:str, path_dn:str=None):
         """Проверяем наличие пользователя AD в группе AD
         user_login - логин пользователя\n
         group_login - логин группы\n
@@ -257,7 +319,7 @@ class ActiveDirectory:
         if path_dn is None:
             path_dn = self.search_dn
 
-        return verify_ad_user_in_group(user_login, group_login, path_dn, self.conn)
+        return check_ad_user_in_group(user_login, group_login, path_dn, self.conn)
 
     def modify_ad_obj_attrs(self, obj_dn:str, modify_attrs:dict):
         """Изменение атрибутов объекта AD\n
