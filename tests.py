@@ -57,11 +57,11 @@ try: check_ad_user_in_group('test22', 'Test_Group1111', path_dn, conn_func)
 except ValueError as err: print(err.__str__() == 'Неверно задан логин группы "Test_Group1111", такой группы не существует')
 
 print('modify_ad_obj_attrs()')
-obj_dn = get_ad_user('test23', ['distinguishedName'], path_dn, conn_func).distinguishedName.value
+obj_dn = get_ad_user('test22', ['distinguishedName'], path_dn, conn_func).distinguishedName.value
 rand_str = str(random.getrandbits(44))
 modify_ad_obj_attrs(obj_dn, {'sn': rand_str, 'displayName': rand_str}, conn_func)
-print(get_ad_user('test23', ['sn'], path_dn, conn_func).sn.value == rand_str)
-print(get_ad_user('test23',['displayName'], path_dn, conn_func).displayName.value == rand_str)
+print(get_ad_user('test22', ['sn'], path_dn, conn_func).sn.value == rand_str)
+print(get_ad_user('test22',['displayName'], path_dn, conn_func).displayName.value == rand_str)
 try: modify_ad_obj_attrs('CN=test2333,DC=ts,DC=main', {'displayName': rand_str}, conn_func)
 except ValueError as err: print(err.__str__() == 'Отсутствует объект с distinguishedName = "CN=test2333,DC=ts,DC=main"')
 

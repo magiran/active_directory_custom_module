@@ -40,6 +40,7 @@ def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn):
     path_dn - dn путь для поиска. По умолчанию self.search_dn
     ad_conn - соединитель Active Directory"""
 
+    user_login = prepare_element_for_ldap_filter(user_login)
     ldap_filter = f'(&(objectCategory=person)(objectClass=user)(sAMAccountName={user_login}))'
     ad_conn.search(path_dn, ldap_filter, attributes=attrs)
 
@@ -55,6 +56,7 @@ def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn):
     path_dn - dn путь для поиска. По умолчанию self.search_dn\n
     ad_conn - соединитель Active Directory"""
 
+    group_login = prepare_element_for_ldap_filter(group_login)
     ldap_filter = f'(&(objectCategory=group)(sAMAccountName={group_login}))'
     ad_conn.search(path_dn, ldap_filter, attributes=attrs)
 
@@ -125,7 +127,8 @@ def check_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn
     group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
     if group == None:
         raise ValueError(f'Неверно задан логин группы "{group_login}", такой группы не существует')    
-    ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group.distinguishedName.value})' \
+    group_dn = prepare_element_for_ldap_filter(group.distinguishedName.value)
+    ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group_dn})' \
                    '(objectCategory=person)(objectClass=user))'  # все пользователи члены группы (рекурсивно)
     searched_users = get_ad_objects(ldap_filter, ['sAMAccountName'], path_dn, ad_conn)
 
@@ -141,6 +144,7 @@ def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
     ad_conn - соединитель Active Directory"""
 
     # выводим ошибку если нет объекта с distinguishedName = obj_dn
+    obj_dn = prepare_element_for_ldap_filter(obj_dn)
     ldap_filter = f'(distinguishedName={obj_dn})'
     searched_obj = get_ad_objects(ldap_filter, [], obj_dn, ad_conn)
     if searched_obj == []:
@@ -170,6 +174,7 @@ def clear_ad_obj_attrs(obj_dn:str, clear_attrs:[], ad_conn):
     ad_conn - соединитель Active Directory"""
 
     # выводим ошибку если нет объекта с distinguishedName = obj_dn
+    obj_dn = prepare_element_for_ldap_filter(obj_dn)
     ldap_filter = f'(distinguishedName={obj_dn})'
     searched_obj = get_ad_objects(ldap_filter, [], obj_dn, ad_conn)
     if searched_obj == []:
@@ -191,6 +196,17 @@ def clear_ad_obj_attrs(obj_dn:str, clear_attrs:[], ad_conn):
         ).value
         if updated_attr_value != None:
             raise PermissionError(f'Атрибут "{attr_key}" не очищен. Вероятно, недостаточно прав для этой операции.')
+
+def prepare_element_for_ldap_filter(elem:str):
+    """Подготовить элемент для LDAP-фильтра. Использовать всегда, если неизвестный элемент будет вставлен\n
+    в фильтр. В группировке условий в LDAP-фильтре используются круглые скобки, если в нашем элементе\n
+    будут скобки, фильтр их распознает, как группировочные и фильтрация закончится ошибкой. Необходимо\n
+    скобки элемента заменить на спец.символы: '(' на '\\28', а ')' на '\\29'.\n
+    elem - подготавливаемый для LDAP-фильтра элемент"""
+
+    prepared_elem = elem.replace('(', '\\28').replace(')', '\\29')
+
+    return prepared_elem
 
 def convert_uac_to_dict(uac_value:int):
     """Перевести значение userAccountControl в словарь\n
@@ -334,6 +350,16 @@ class ActiveDirectory:
         clear_attrs - массив имён атрибутов для очистки\n"""
 
         clear_ad_obj_attrs(obj_dn, clear_attrs, self.conn)
+
+    @staticmethod
+    def prepare_element_for_ldap_filter(elem:str):
+        """Подготовить элемент для LDAP-фильтра. Использовать всегда, если неизвестный элемент будет вставлен\n
+        в фильтр. В группировке условий в LDAP-фильтре используются круглые скобки, если в нашем элементе\n
+        будут скобки, фильтр их распознает, как группировочные и фильтрация закончится ошибкой. Необходимо\n
+        скобки элемента заменить на спец.символы: '(' на '\\28', а ')' на '\\29'.\n
+        elem - подготавливаемый для LDAP-фильтра элемент"""
+
+        return prepare_element_for_ldap_filter(elem)
 
     @staticmethod
     def convert_uac_to_dict(uac_value:int):
