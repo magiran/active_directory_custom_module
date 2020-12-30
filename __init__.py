@@ -23,7 +23,7 @@ def get_active_directory_conn(ad_servers:[], login:str, password:str):
     if conn.bind():
         return conn
 
-def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn):
+def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_if_empty=None):
     """Получить объекты по LDAP-фильтру\n
     ldapFilter - фильтр LDAP\n
     attributes - список искомых атрибутов\n
@@ -31,13 +31,17 @@ def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn):
     ad_conn - соединитель Active Directory"""
 
     ad_conn.search(path_dn, ldap_filter, attributes=attributes)
+    
+    if error_if_empty:
+        if ad_conn.entries == []:
+            raise ValueError(f'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: {ldap_filter}')
     return ad_conn.entries
 
-def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn):
+def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=None):
     """Получить пользователя с необходимыми атрибутами по логину\n
     user_login - логин\n
     attrs - массив искомых атрибутов пользователя\n
-    path_dn - dn путь для поиска. По умолчанию self.search_dn
+    path_dn - dn путь для поиска\n
     ad_conn - соединитель Active Directory"""
 
     user_login = prepare_element_for_ldap_filter(user_login)
@@ -47,13 +51,15 @@ def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn):
     if len(ad_conn.entries) == 1:
         return ad_conn.entries[0]
     else:
+        if error_if_empty:
+            raise ValueError(f'Пользователь с логином "{user_login}" не найден')
         return None
 
-def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn):
+def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=None):
     """Получить группу с необходимыми атрибутами по логину (sAMAccountName)\n
     group_login - логин группы (это атрибут sAMAccountName)\n
     attrs - массив искомых атрибутов группы\n
-    path_dn - dn путь для поиска. По умолчанию self.search_dn\n
+    path_dn - dn путь для поиска\n
     ad_conn - соединитель Active Directory"""
 
     group_login = prepare_element_for_ldap_filter(group_login)
@@ -63,6 +69,8 @@ def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn):
     if len(ad_conn.entries) == 1:
         return ad_conn.entries[0]
     else:
+        if error_if_empty:
+            raise ValueError(f'Группа с логином "{group_login}" не найдена')
         return None
 
 def add_ad_user_to_group(user_login:str, group_login:str, path_dn:str, ad_conn):
@@ -72,18 +80,13 @@ def add_ad_user_to_group(user_login:str, group_login:str, path_dn:str, ad_conn):
     path_dn - dn путь для поиска сотрудника и группы\n
     ad_conn - соединитель Active Directory"""
 
-    user = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn)
-    group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
-
-    if user == None:
-        raise ValueError('Неверно задан логин пользователя, такого пользователя не существует')
-    if group == None:
-        raise ValueError('Неверно задан логин группы, такой группы не существует')
+    user_dn = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
+    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
 
     ldap3.extend.microsoft.addMembersToGroups.ad_add_members_to_groups(
         ad_conn,
-        user.distinguishedName.value,
-        group.distinguishedName.value
+        user_dn,
+        group_dn
     )
 
     if not check_ad_user_in_group(user_login, group_login, path_dn, ad_conn):
@@ -97,18 +100,18 @@ def remove_ad_user_from_group(user_login:str, group_login:str, path_dn:str, ad_c
     path_dn - dn путь для поиска сотрудника и группы\n
     ad_conn - соединитель Active Directory"""
 
-    user = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn)
-    group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
+    user_dn = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
+    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
 
-    if user == None:
-        raise ValueError('Неверно задан логин пользователя, такого пользователя не существует')
-    if group == None:
-        raise ValueError('Неверно задан логин группы, такой группы не существует')    
+    # if user == None:
+    #     raise ValueError('Неверно задан логин пользователя, такого пользователя не существует')
+    # if group == None:
+    #     raise ValueError('Неверно задан логин группы, такой группы не существует')    
 
     ldap3.extend.microsoft.removeMembersFromGroups.ad_remove_members_from_groups(
         ad_conn,
-        user.distinguishedName.value,
-        group.distinguishedName.value,
+        user_dn,
+        group_dn,
         True
     )
 
@@ -123,11 +126,12 @@ def check_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn
     path_dn - dn путь для поиска сотрудника и группы\n
     ad_conn - соединитель Active Directory"""
 
+    # просто чтобы вызвать ошибку, если пользователя не существует
+    get_ad_user(user_login, [], path_dn, ad_conn, error_if_empty=True)
+
     # ищем всех членов группы
-    group = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn)
-    if group == None:
-        raise ValueError(f'Неверно задан логин группы "{group_login}", такой группы не существует')    
-    group_dn = prepare_element_for_ldap_filter(group.distinguishedName.value)
+    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
+    group_dn = prepare_element_for_ldap_filter(group_dn)
     ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group_dn})' \
                    '(objectCategory=person)(objectClass=user))'  # все пользователи члены группы (рекурсивно)
     searched_users = get_ad_objects(ldap_filter, ['sAMAccountName'], path_dn, ad_conn)
@@ -143,12 +147,11 @@ def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
     modify_attrs - атрибуты для изменения {attr1: value1, attr2: value2}\n
     ad_conn - соединитель Active Directory"""
 
-    # выводим ошибку если нет объекта с distinguishedName = obj_dn
     obj_dn = prepare_element_for_ldap_filter(obj_dn)
     ldap_filter = f'(distinguishedName={obj_dn})'
-    searched_obj = get_ad_objects(ldap_filter, [], obj_dn, ad_conn)
-    if searched_obj == []:
-        raise ValueError(f'Отсутствует объект с distinguishedName = "{obj_dn}"')
+
+    # просто выводим ошибку если нет объекта с distinguishedName = obj_dn
+    get_ad_objects(ldap_filter, [], obj_dn, ad_conn, error_if_empty=True)
 
     for attr_key in modify_attrs:
         # изменение атрибута
@@ -161,7 +164,7 @@ def modify_ad_obj_attrs(obj_dn:str, modify_attrs:dict, ad_conn):
 
         #проверка изменения атрибута
         updated_attr_value = getattr(
-            get_ad_objects(ldap_filter, [attr_key], obj_dn, ad_conn)[0],
+            get_ad_objects(ldap_filter, [attr_key], obj_dn, ad_conn, error_if_empty=True)[0],
             attr_key    
         ).value
         if updated_attr_value != modify_attrs[attr_key]:
@@ -173,12 +176,11 @@ def clear_ad_obj_attrs(obj_dn:str, clear_attrs:[], ad_conn):
     clear_attrs - массив имён атрибутов для очистки\n
     ad_conn - соединитель Active Directory"""
 
-    # выводим ошибку если нет объекта с distinguishedName = obj_dn
     obj_dn = prepare_element_for_ldap_filter(obj_dn)
     ldap_filter = f'(distinguishedName={obj_dn})'
-    searched_obj = get_ad_objects(ldap_filter, [], obj_dn, ad_conn)
-    if searched_obj == []:
-        raise ValueError(f'Отсутствует объект с distinguishedName = "{obj_dn}"')
+
+    # просто выводим ошибку если нет объекта с distinguishedName = obj_dn
+    get_ad_objects(ldap_filter, [], obj_dn, ad_conn, error_if_empty=True)
 
     for attr_key in clear_attrs:
         # очистка атрибута
@@ -191,7 +193,7 @@ def clear_ad_obj_attrs(obj_dn:str, clear_attrs:[], ad_conn):
 
         # проверка очистки атрибута
         updated_attr_value = getattr(
-            get_ad_objects(ldap_filter, [attr_key], obj_dn, ad_conn)[0],
+            get_ad_objects(ldap_filter, [attr_key], obj_dn, ad_conn, error_if_empty=True)[0],
             attr_key    
         ).value
         if updated_attr_value != None:
@@ -262,7 +264,7 @@ class ActiveDirectory:
         self.conn = get_active_directory_conn(ad_servers, login, password)
         self.search_dn = search_dn
 
-    def get_ad_objects(self, ldap_filter:str, attributes:[], path_dn:str=None):
+    def get_ad_objects(self, ldap_filter:str, attributes:[], path_dn:str=None, error_if_empty=None):
         """Получить AD объекты по LDAP-фильтру\n
         ldapFilter - фильтр LDAP\n
         attributes - список искомых атрибутов\n
@@ -272,10 +274,10 @@ class ActiveDirectory:
         if path_dn is None:
             path_dn = self.search_dn
 
-        search_objects = get_ad_objects(ldap_filter, attributes, path_dn, self.conn)
+        search_objects = get_ad_objects(ldap_filter, attributes, path_dn, self.conn, error_if_empty)
         return search_objects
 
-    def get_ad_user(self, user_login:str, attrs:[], path_dn:str=None):
+    def get_ad_user(self, user_login:str, attrs:[], path_dn:str=None, error_if_empty=None):
         """Получить пользователя с необходимыми атрибутами по логину\n
         user_login - логин\n
         attrs - массив искомых атрибутов пользователя\n
@@ -285,10 +287,10 @@ class ActiveDirectory:
         if path_dn is None:
             path_dn = self.search_dn
         
-        searched_user = get_ad_user(user_login, attrs, path_dn, self.conn)
+        searched_user = get_ad_user(user_login, attrs, path_dn, self.conn, error_if_empty)
         return searched_user
 
-    def get_ad_group(self, group_login:str, attrs:[], path_dn:str=None):
+    def get_ad_group(self, group_login:str, attrs:[], path_dn:str=None, error_if_empty=None):
         """Получить группу с необходимыми атрибутами по логину (sAMAccountName)\n
         group_login - логин группы (это атрибут sAMAccountName)\n
         attrs - массив искомых атрибутов группы\n
@@ -298,7 +300,7 @@ class ActiveDirectory:
         if path_dn is None:
             path_dn = self.search_dn
         
-        searched_group = get_ad_group(group_login, attrs, path_dn, self.conn)
+        searched_group = get_ad_group(group_login, attrs, path_dn, self.conn, error_if_empty)
         return searched_group
 
     def add_ad_user_to_group(self, user_login:str, group_login:str, path_dn:str=None):
