@@ -22,12 +22,11 @@ from config_private import (
 import random
 #endregion
 
+conn_func = get_active_directory_conn(ad_servers, ad_login, ad_password)
+ad = ActiveDirectory(ad_servers, ad_login, ad_password, path_dn)
 
 #region проверка функций
-    # region Проверка отдельных функций
 print('Проверка отдельных функций')
-conn_func = get_active_directory_conn(ad_servers, ad_login, ad_password)
-    #endregion
 
     #region get_ad_objects()
 print('          get_ad_objects()')
@@ -111,10 +110,7 @@ print(get_uac_attr(66048, 65536)== True)
 
 
 #region проверка Класса
-    #region Проверка методов Класса
 print('\nПроверка методов Класса')
-ad = ActiveDirectory(ad_servers, ad_login, ad_password, path_dn)
-    #endregion
 
     #region ad.get_ad_objects()
 print('          ad.get_ad_objects()')

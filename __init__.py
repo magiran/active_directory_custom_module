@@ -206,7 +206,10 @@ def prepare_element_for_ldap_filter(elem:str):
     скобки элемента заменить на спец.символы: '(' на '\\28', а ')' на '\\29'.\n
     elem - подготавливаемый для LDAP-фильтра элемент"""
 
-    prepared_elem = elem.replace('(', '\\28').replace(')', '\\29')
+    prepared_elem = elem \
+                        .replace('(', '\\28') \
+                        .replace(')', '\\29') \
+                        .replace('*', '\\2a')
 
     return prepared_elem
 
