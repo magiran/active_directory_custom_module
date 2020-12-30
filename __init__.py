@@ -23,7 +23,7 @@ def get_active_directory_conn(ad_servers:[], login:str, password:str):
     if conn.bind():
         return conn
 
-def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_if_empty=None):
+def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_if_empty=False):
     """Получить объекты по LDAP-фильтру\n
     ldapFilter - фильтр LDAP\n
     attributes - список искомых атрибутов\n
@@ -37,7 +37,7 @@ def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_i
             raise ValueError(f'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: {ldap_filter}')
     return ad_conn.entries
 
-def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=None):
+def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=False):
     """Получить пользователя с необходимыми атрибутами по логину\n
     user_login - логин\n
     attrs - массив искомых атрибутов пользователя\n
@@ -55,7 +55,7 @@ def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=N
             raise ValueError(f'Пользователь с логином "{user_login}" не найден')
         return None
 
-def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=None):
+def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=False):
     """Получить группу с необходимыми атрибутами по логину (sAMAccountName)\n
     group_login - логин группы (это атрибут sAMAccountName)\n
     attrs - массив искомых атрибутов группы\n
@@ -101,12 +101,7 @@ def remove_ad_user_from_group(user_login:str, group_login:str, path_dn:str, ad_c
     ad_conn - соединитель Active Directory"""
 
     user_dn = get_ad_user(user_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
-    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
-
-    # if user == None:
-    #     raise ValueError('Неверно задан логин пользователя, такого пользователя не существует')
-    # if group == None:
-    #     raise ValueError('Неверно задан логин группы, такой группы не существует')    
+    group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value   
 
     ldap3.extend.microsoft.removeMembersFromGroups.ad_remove_members_from_groups(
         ad_conn,
@@ -119,7 +114,7 @@ def remove_ad_user_from_group(user_login:str, group_login:str, path_dn:str, ad_c
         raise PermissionError(f'Сотрудник "{user_login}" не удалён из группы "{group_login}". '\
                                'Вероятно, недостаточно прав для этой операции.')
 
-def check_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn):
+def check_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn, recurse=True):
     """Проверяем наличие пользователя AD в группе AD
     user_login - логин пользователя\n
     group_login - логин группы\n
@@ -129,13 +124,20 @@ def check_ad_user_in_group(user_login:str, group_login:str, path_dn:str, ad_conn
     # просто чтобы вызвать ошибку, если пользователя не существует
     get_ad_user(user_login, [], path_dn, ad_conn, error_if_empty=True)
 
-    # ищем всех членов группы
+    # готовим ldap-фильтр
     group_dn = get_ad_group(group_login, ['distinguishedName'], path_dn, ad_conn, error_if_empty=True).distinguishedName.value
     group_dn = prepare_element_for_ldap_filter(group_dn)
-    ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group_dn})' \
-                   '(objectCategory=person)(objectClass=user))'  # все пользователи члены группы (рекурсивно)
+    if recurse:
+        ldap_filter = f'(&(memberOf:1.2.840.113556.1.4.1941:={group_dn})' \
+                       '(objectCategory=person)(objectClass=user))'
+    else:
+        ldap_filter = f'(&(memberOf={group_dn})' \
+                       '(objectCategory=person)(objectClass=user))'
+    
+    # ищем всех пользователей
     searched_users = get_ad_objects(ldap_filter, ['sAMAccountName'], path_dn, ad_conn)
 
+    # проверяем наличие нашего пользователя в найденных, выводим результат
     for user in searched_users:
         if user.sAMAccountName.value == user_login:
             return True
@@ -330,7 +332,7 @@ class ActiveDirectory:
 
         remove_ad_user_from_group(user_login, group_login, path_dn, self.conn)
 
-    def check_ad_user_in_group(self, user_login:str, group_login:str, path_dn:str=None):
+    def check_ad_user_in_group(self, user_login:str, group_login:str, path_dn:str=None, recurse=True):
         """Проверяем наличие пользователя AD в группе AD
         user_login - логин пользователя\n
         group_login - логин группы\n
@@ -340,7 +342,7 @@ class ActiveDirectory:
         if path_dn is None:
             path_dn = self.search_dn
 
-        return check_ad_user_in_group(user_login, group_login, path_dn, self.conn)
+        return check_ad_user_in_group(user_login, group_login, path_dn, self.conn, recurse)
 
     def modify_ad_obj_attrs(self, obj_dn:str, modify_attrs:dict):
         """Изменение атрибутов объекта AD\n
