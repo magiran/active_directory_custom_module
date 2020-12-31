@@ -3,6 +3,7 @@ from __init__ import ActiveDirectory
 from __init__ import (
     get_active_directory_conn,
     get_ad_objects,
+    get_ad_objects_over_1000,
     get_ad_user,
     get_ad_group,
     add_ad_user_to_group,
@@ -35,6 +36,15 @@ print(get_ad_objects('(&(objectCategory=group)(sAMAccountName=Test_Group))', ['c
 print(get_ad_objects('(&(objectCategory=groupjhj)(cn=asasdasd))', ['mail'], path_dn, conn_func) == [])
 try: get_ad_objects('(&(objectCategory=groupjhj)(cn=asasdasd))', ['mail'], path_dn, conn_func, error_if_empty=True)
 except ValueError as err: print(err.__str__() == 'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: (&(objectCategory=groupjhj)(cn=asasdasd))')
+    #endregion
+
+    #region get_ad_objects_over_1000()
+print('          get_ad_objects_over_1000()')
+print(len(get_ad_objects_over_1000('(objectClass=user)', [], path_dn, conn_func)) > 1000)
+print(get_ad_objects_over_1000('(mail=test22@tesli.com)', ['sAMAccountName'], path_dn, conn_func)[0].sAMAccountName == 'test22')
+print(len(get_ad_objects_over_1000('(mail=asfg)', [], path_dn, conn_func)) == 0)
+try: get_ad_objects_over_1000('(mail=asfg)', [], path_dn, conn_func, error_if_empty=True)
+except ValueError as err: print(err.__str__() == 'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: (mail=asfg)')
     #endregion
 
     #region get_ad_user()
@@ -119,6 +129,15 @@ print(ad.get_ad_objects('(&(objectCategory=group)(sAMAccountName=Test_Group))', 
 print(ad.get_ad_objects('(&(objectCategory=groupjhj)(cn=asasdasd))', ['mail']) == [])
 try: ad.get_ad_objects('(&(objectCategory=groupjhj)(cn=asasdasd))', ['mail'], error_if_empty=True)
 except ValueError as err: print(err.__str__() == 'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: (&(objectCategory=groupjhj)(cn=asasdasd))')
+    #endregion
+
+    #region get_ad_objects_over_1000()
+print('          get_ad_objects_over_1000()')
+print(len(ad.get_ad_objects_over_1000('(objectClass=user)', [])) > 1000)
+print(ad.get_ad_objects_over_1000('(mail=test22@tesli.com)', ['sAMAccountName'])[0].sAMAccountName == 'test22')
+print(len(ad.get_ad_objects_over_1000('(mail=asfg)', [])) == 0)
+try: ad.get_ad_objects_over_1000('(mail=asfg)', [], error_if_empty=True)
+except ValueError as err: print(err.__str__() == 'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: (mail=asfg)')
     #endregion
 
     #region ad.get_ad_user()

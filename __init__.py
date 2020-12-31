@@ -23,12 +23,13 @@ def get_active_directory_conn(ad_servers:[], login:str, password:str):
     if conn.bind():
         return conn
 
-def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_if_empty=False):
+def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn:ldap3.core.connection.Connection, error_if_empty=False):
     """Получить объекты по LDAP-фильтру\n
-    ldapFilter - фильтр LDAP\n
+    ldap_filter - фильтр LDAP\n
     attributes - список искомых атрибутов\n
     path_dn - путь distinguishedName для поиска
-    ad_conn - соединитель Active Directory"""
+    ad_conn - соединитель Active Directory\n
+    error_if_empty - если True вызовет исключение при пустом результате"""
 
     ad_conn.search(path_dn, ldap_filter, attributes=attributes)
     
@@ -37,12 +38,48 @@ def get_ad_objects(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_i
             raise ValueError(f'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: {ldap_filter}')
     return ad_conn.entries
 
+def get_ad_objects_over_1000(ldap_filter:str, attributes:[], path_dn:str, ad_conn, error_if_empty=False):
+    """Получить объекты по LDAP-фильтру без ограничений по их количеству
+    ldap_filter - фильтр LDAP\n
+    attributes - список искомых атрибутов\n
+    path_dn - путь distinguishedName для поиска\n
+    ad_conn - соединитель Active Directory\n
+    error_if_empty - если True вызовет исключение при пустом результате"""
+
+    # класс для возвращаемого объекта
+    class LDAPObject:
+        def __init__(self, obj_raw):
+            self.obj_raw = obj_raw
+            self.dn = obj_raw['dn']
+            for attr in obj_raw['attributes']:
+                setattr(
+                    self,
+                    attr,
+                    obj_raw['attributes'][attr]
+                )
+
+    # ищем объекты и отфильтровываем системные не нужные нам объекты
+    searched_objects = ad_conn.extend.standard.paged_search(path_dn, ldap_filter, attributes=attributes, generator=False)
+    searched_objects_filter = filter(lambda x: x['type'] == 'searchResEntry', searched_objects)
+    
+    # делаем из объектов массив экземпляров нашего класса LDAPObject
+    return_objs = []
+    for elem in searched_objects_filter:
+        return_objs.append(LDAPObject(elem))
+
+    # возвращаем результат
+    if error_if_empty:
+        if return_objs == []:
+            raise ValueError(f'По заданному LDAP-фильтру не найден ни один объект. LDAP-фильтр: {ldap_filter}')
+    return return_objs
+
 def get_ad_user(user_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty=False):
     """Получить пользователя с необходимыми атрибутами по логину\n
     user_login - логин\n
     attrs - массив искомых атрибутов пользователя\n
     path_dn - dn путь для поиска\n
-    ad_conn - соединитель Active Directory"""
+    ad_conn - соединитель Active Directory\n
+    error_if_empty - если True вызовет исключение при пустом результате"""
 
     user_login = prepare_element_for_ldap_filter(user_login)
     ldap_filter = f'(&(objectCategory=person)(objectClass=user)(sAMAccountName={user_login}))'
@@ -60,7 +97,8 @@ def get_ad_group(group_login:str, attrs:[], path_dn:str, ad_conn, error_if_empty
     group_login - логин группы (это атрибут sAMAccountName)\n
     attrs - массив искомых атрибутов группы\n
     path_dn - dn путь для поиска\n
-    ad_conn - соединитель Active Directory"""
+    ad_conn - соединитель Active Directory\n
+    error_if_empty - если True вызовет исключение при пустом результате"""
 
     group_login = prepare_element_for_ldap_filter(group_login)
     ldap_filter = f'(&(objectCategory=group)(sAMAccountName={group_login}))'
@@ -269,7 +307,7 @@ class ActiveDirectory:
         self.conn = get_active_directory_conn(ad_servers, login, password)
         self.search_dn = search_dn
 
-    def get_ad_objects(self, ldap_filter:str, attributes:[], path_dn:str=None, error_if_empty=None):
+    def get_ad_objects(self, ldap_filter:str, attributes:[], path_dn:str=None, error_if_empty=False):
         """Получить AD объекты по LDAP-фильтру\n
         ldapFilter - фильтр LDAP\n
         attributes - список искомых атрибутов\n
@@ -282,7 +320,21 @@ class ActiveDirectory:
         search_objects = get_ad_objects(ldap_filter, attributes, path_dn, self.conn, error_if_empty)
         return search_objects
 
-    def get_ad_user(self, user_login:str, attrs:[], path_dn:str=None, error_if_empty=None):
+    def get_ad_objects_over_1000(self, ldap_filter:str, attributes:[], path_dn:str=None, error_if_empty=False):
+        """Получить объекты по LDAP-фильтру без ограничений по их количеству
+        ldap_filter - фильтр LDAP\n
+        attributes - список искомых атрибутов\n
+        path_dn - путь distinguishedName для поиска\n
+        error_if_empty - если True вызовет исключение при пустом результате"""
+
+        # __init__
+        if path_dn is None:
+            path_dn = self.search_dn
+        
+        search_objects = get_ad_objects_over_1000(ldap_filter, attributes, path_dn, self.conn, error_if_empty)
+        return search_objects
+
+    def get_ad_user(self, user_login:str, attrs:[], path_dn:str=None, error_if_empty=False):
         """Получить пользователя с необходимыми атрибутами по логину\n
         user_login - логин\n
         attrs - массив искомых атрибутов пользователя\n
@@ -295,7 +347,7 @@ class ActiveDirectory:
         searched_user = get_ad_user(user_login, attrs, path_dn, self.conn, error_if_empty)
         return searched_user
 
-    def get_ad_group(self, group_login:str, attrs:[], path_dn:str=None, error_if_empty=None):
+    def get_ad_group(self, group_login:str, attrs:[], path_dn:str=None, error_if_empty=False):
         """Получить группу с необходимыми атрибутами по логину (sAMAccountName)\n
         group_login - логин группы (это атрибут sAMAccountName)\n
         attrs - массив искомых атрибутов группы\n
